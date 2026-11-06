@@ -1,0 +1,87 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#080b25">
+  <title>Astro Escape 🚀</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+  <main class="container">
+
+    <header>
+      <h1>🚀 ASTRO ESCAPE</h1>
+      <p>¡Sobrevive en el espacio y consigue la mayor puntuación!</p>
+    </header>
+
+    <!-- Puntuación -->
+    <section class="score-board">
+      <span>⭐ PUNTUACIÓN</span>
+      <span id="score">0</span>
+    </section>
+
+    <!-- Dificultad -->
+    <section class="difficulty-container">
+      <label for="difficulty">⚡ DIFICULTAD</label>
+
+      <select id="difficulty">
+        <option value="easy">🟢 Fácil</option>
+        <option value="normal" selected>🔵 Normal</option>
+        <option value="hard">🟠 Difícil</option>
+        <option value="nightmare">🔴 Pesadilla</option>
+        <option value="lunatic">🟣 Lunático</option>
+      </select>
+    </section>
+
+    <!-- Combustible -->
+    <section class="fuel-container">
+
+      <div class="fuel-info">
+        <span>⛽ COMBUSTIBLE</span>
+        <span id="fuelText">100%</span>
+      </div>
+
+      <div class="fuel-track">
+        <div id="fuelBar"></div>
+      </div>
+
+    </section>
+
+    <!-- Área del videojuego -->
+    <canvas id="gameCanvas" width="480" height="640">
+      Tu navegador no admite Canvas.
+    </canvas>
+
+    <!-- Mensajes -->
+    <section class="game-controls">
+      <p id="message">¡Prepárate para la aventura espacial!</p>
+
+      <button id="startButton">
+        COMENZAR JUEGO
+      </button>
+    </section>
+
+    <!-- Controles táctiles -->
+    <section class="mobile-controls">
+
+      <button id="leftButton" aria-label="Izquierda">⬅️</button>
+      <button id="upButton" aria-label="Arriba">⬆️</button>
+      <button id="downButton" aria-label="Abajo">⬇️</button>
+      <button id="rightButton" aria-label="Derecha">➡️</button>
+
+    </section>
+
+    <footer>
+      <p>WASD: Mover nave | ⛽ Recargar | ⭐ Bonus | ☄️ Esquivar</p>
+    </footer>
+
+  </main>
+
+  <script src="script.js"></script>
+
+</body>
+</html>

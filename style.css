@@ -1,0 +1,279 @@
+
+/* =================================
+   ASTRO ESCAPE - DISEÑO
+================================= */
+
+/* Configuración general */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  min-height: 100vh;
+  background: linear-gradient(
+    135deg,
+    #080b25,
+    #21104a,
+    #101c43
+  );
+
+  color: white;
+  font-family: Arial, sans-serif;
+  text-align: center;
+  padding: 20px;
+}
+
+/* Contenedor principal */
+.container {
+  width: 100%;
+  max-width: 520px;
+  margin: auto;
+}
+
+/* Título */
+header h1 {
+  color: #55eaff;
+  font-size: 32px;
+  margin-bottom: 10px;
+  text-shadow: 0 0 15px #55eaff;
+}
+
+header p {
+  color: #d4d8ff;
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+/* Puntuación */
+.score-board {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  background: #191d45;
+  border: 2px solid #55eaff;
+  border-radius: 12px;
+
+  padding: 12px 20px;
+  margin-bottom: 12px;
+
+  font-weight: bold;
+  font-size: 17px;
+}
+
+/* Selector de dificultad */
+.difficulty-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+
+  background: #191d45;
+  border: 2px solid #9b59ff;
+  border-radius: 12px;
+
+  padding: 12px 15px;
+  margin-bottom: 12px;
+}
+
+.difficulty-container label {
+  font-weight: bold;
+  font-size: 14px;
+}
+
+#difficulty {
+  background: #292e62;
+  color: white;
+
+  border: 1px solid #55eaff;
+  border-radius: 8px;
+
+  padding: 9px;
+  font-weight: bold;
+  cursor: pointer;
+  max-width: 60%;
+}
+
+#difficulty:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Combustible */
+.fuel-container {
+  background: #191d45;
+  border: 2px solid #55eaff;
+  border-radius: 12px;
+
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.fuel-info {
+  display: flex;
+  justify-content: space-between;
+
+  font-weight: bold;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.fuel-track {
+  height: 15px;
+  background: #343858;
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+#fuelBar {
+  height: 100%;
+  width: 100%;
+
+  background: linear-gradient(
+    90deg,
+    #16e58b,
+    #a7ff55
+  );
+
+  border-radius: 20px;
+  transition: width 0.15s;
+}
+
+#fuelBar.low {
+  background: linear-gradient(
+    90deg,
+    #ff3434,
+    #ffad35
+  );
+}
+
+/* Canvas */
+canvas {
+  display: block;
+
+  width: 100%;
+  height: auto;
+
+  background: #070b20;
+  border: 3px solid #55eaff;
+  border-radius: 15px;
+
+  box-shadow: 0 0 25px #267bff66;
+}
+
+/* Mensajes */
+.game-controls {
+  margin-top: 15px;
+}
+
+#message {
+  color: #ffe77a;
+  font-size: 15px;
+  margin-bottom: 12px;
+  min-height: 40px;
+  line-height: 1.5;
+}
+
+/* Botón principal */
+#startButton {
+  background: linear-gradient(
+    90deg,
+    #00d9ff,
+    #9b59ff
+  );
+
+  color: white;
+  border: none;
+  padding: 14px 30px;
+
+  border-radius: 30px;
+  font-size: 16px;
+  font-weight: bold;
+
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+#startButton:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 20px #55eaff;
+}
+
+#startButton:active {
+  transform: scale(0.97);
+}
+
+/* Controles táctiles */
+.mobile-controls {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+
+  margin-top: 20px;
+}
+
+.mobile-controls button {
+  width: 65px;
+  height: 55px;
+
+  border: 2px solid #55eaff;
+  border-radius: 15px;
+
+  background: #191d45;
+  color: white;
+
+  font-size: 25px;
+  cursor: pointer;
+
+  touch-action: none;
+  user-select: none;
+}
+
+.mobile-controls button:active {
+  background: #3852a5;
+}
+
+/* Pie de página */
+footer {
+  color: #bfc6ed;
+  font-size: 13px;
+  margin-top: 20px;
+  line-height: 1.5;
+}
+
+/* Celulares */
+@media (max-width: 500px) {
+
+  body {
+    padding: 12px;
+  }
+
+  header h1 {
+    font-size: 25px;
+  }
+
+  header p {
+    font-size: 13px;
+  }
+
+  .score-board {
+    padding: 10px;
+    font-size: 14px;
+  }
+
+  .difficulty-container {
+    padding: 10px;
+  }
+
+  .mobile-controls button {
+    width: 58px;
+    height: 50px;
+  }
+
+  #startButton {
+    padding: 12px 22px;
+  }
+}
