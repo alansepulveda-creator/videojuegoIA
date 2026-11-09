@@ -1,87 +1,349 @@
-
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#080b25">
-  <title>Astro Escape 🚀</title>
-  <link rel="stylesheet" href="style.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Maiden & Spell: Duelo de balas</title>
+<style>
+:root{--bg:#12102a;--ink:#ece8ff;--mute:#a49fcf;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+:root:not([data-theme="dark"]){color-scheme:dark}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]){color-scheme:light;--bg:#f1eeff;--ink:#241f4a;--mute:#6a649c}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Georgia,serif}
+main{max-width:900px;margin:0 auto;padding:12px;text-align:center}
+canvas{width:100%;max-width:860px;height:auto;border-radius:14px;display:block;margin:0 auto}
+p{color:var(--mute);margin:.5em 0;font-size:.92rem;line-height:1.4}
+</style>
 </head>
-
 <body>
+<main>
+<canvas id="c" width="640" height="480"></canvas>
+<p>Jugador 1: WASD moverte, Shift izquierdo (Focus), F tiro básico, G tiro amplio, H especial ofensivo, T especial defensivo.<br>
+Jugador 2: flechas moverte, Shift derecho (Focus), coma básico, punto amplio, barra especial ofensivo, punto y coma defensivo. Hace falta teclado.</p>
+<div style="margin:8px 0"><input id="code" maxlength="20" placeholder="código de sala, ej: duelo1" style="padding:8px;border-radius:8px;border:1px solid #6a649c;background:transparent;color:inherit;font:inherit"> <button id="join" style="padding:8px 14px;border-radius:8px;border:1px solid #6a649c;background:transparent;color:inherit;font:inherit;cursor:pointer">Jugar online</button> <span id="st" style="color:#a49fcf"></span></div>
+<p>Online: tu rival abre el mismo enlace, escribe el mismo código y ambos juegan con los controles del Jugador 1.</p>
+</main>
+<script type="application/json" id="data">
+{"maidens":[
+ {"name":"Escarcha","hair":"#d6f1ff","color":"#5cc8ff","speed":175,
+  "ba":{"pat":"fan","k":1,"spread":0,"sp":300,"r":3,"cd":0.13,"f":{"sp":390,"cd":0.1}},
+  "wi":{"pat":"curve","k":8,"spread":1.0,"tr":1.1,"sp":170,"r":4,"cd":2.0},
+  "of":{"pat":"arms","k":14,"arms":2,"tw":0.45,"sp":150,"r":4,"cd":5},
+  "de":{"pat":"layers","k":10,"L":3,"step":40,"sp":90,"r":4,"cd":6,"inv":1}},
+ {"name":"Tormenta","hair":"#fff2a6","color":"#ffd84a","speed":200,
+  "ba":{"pat":"fan","k":1,"spread":0,"sp":340,"r":3,"cd":0.16,"f":{"k":3,"spread":0.25}},
+  "wi":{"pat":"burst","k":5,"sp":260,"r":4,"cd":1.8},
+  "of":{"pat":"wall","k":13,"sp":170,"r":4,"cd":5},
+  "de":{"pat":"rebound","k":10,"sp":220,"re":0.8,"rsp":230,"r":4,"cd":6,"inv":1.2}},
+ {"name":"Sol","hair":"#ffd1a1","color":"#ff9a52","speed":160,
+  "ba":{"pat":"fan","k":2,"spread":0.12,"sp":260,"r":3,"cd":0.18,"f":{"k":4,"spread":0.2}},
+  "wi":{"pat":"bloom","k":12,"sp":45,"ac":0.9,"r":5,"cd":2.2},
+  "of":{"pat":"arms","k":12,"arms":3,"tw":0.5,"sp":130,"r":4,"cd":6},
+  "de":{"pat":"fan","k":9,"spread":3,"sp":100,"r":5,"cd":6,"inv":1.2}}
+]}
+</script>
+<script>
+// Adaptador: imita la API de "room" usando un WebSocket propio (servidor server.js)
+(function () {
+  const url = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host;
+  window.claude = { use: async n => n !== 'room' ? null : { join: code => new Promise((res, rej) => {
+    const ws = new WebSocket(url);
+    let you = '', hs = [], pend = {}, timer = null;
+    const flush = () => { timer = null; if (ws.readyState === 1) { ws.send(JSON.stringify({ t: 'pr', p: pend })); pend = {}; } };
+    const room = {
+      presence: async p => { Object.assign(pend, p); if (!timer) timer = setTimeout(flush, 33); },
+      onPeers: h => { hs.push(h); return () => { hs = hs.filter(x => x !== h); }; }
+    };
+    ws.onopen = () => ws.send(JSON.stringify({ t: 'join', code }));
+    ws.onerror = () => rej(new Error('ws'));
+    ws.onclose = () => hs.forEach(h => h({ peers: [], joined: [], left: [], updated: [] }));
+    ws.onmessage = e => {
+      const d = JSON.parse(e.data);
+      if (d.t === 'full') return rej(new Error('full'));
+      if (d.t !== 'st') return;
+      const first = !you; you = d.you;
+      const peers = d.peers.map(x => ({ peer: x.id, presence: x.p, isMe: x.id === you, sameTab: x.id === you, kind: 'viewer', guest: false }));
+      if (first) res(room);
+      hs.forEach(h => h({ peers, joined: [], left: [], updated: [] }));
+    };
+  }) } };
+})();
+</script>
+<script>
+const D = JSON.parse(document.getElementById('data').textContent).maidens;
+const cv = document.getElementById('c'), g = cv.getContext('2d'), W = 640, H = 480;
+const CT = [
+  { up:'KeyW', dn:'KeyS', lf:'KeyA', rt:'KeyD', fo:'ShiftLeft', ba:'KeyF', wi:'KeyG', of:'KeyH', de:'KeyT' },
+  { up:'ArrowUp', dn:'ArrowDown', lf:'ArrowLeft', rt:'ArrowRight', fo:'ShiftRight', ba:'Comma', wi:'Period', of:'Slash', de:'Semicolon' }
+];
+const ACT = ['ba', 'wi', 'of', 'de'];
+const net = { on: false, room: null, L: 0, R: 1, rp: null, rd: null, rn: 0, cn: 0, hn: 0, seenCn: 0, seenHn: 0, sel: 0, rdy: 0, n: 0, code: '' };
+const ctl = p => CT[net.on ? 0 : p.i];
+const focus = p => net.on && p.i === net.R ? !!(net.rd && net.rd.fc) : !!keys[ctl(p).fo];
+const keys = {};
+const stars = Array.from({ length: 50 }, () => ({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.4 + 0.4, s: 5 + Math.random() * 15 }));
+let mode = 'menu', sel = [0, 1], ready = [0, 0], cpu = false, wins = [0, 0];
+let P = [], B = [], Q = [], calm = 0, margin = 0, msg = '', cnt = 0;
 
-  <main class="container">
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.code.startsWith('Arrow') || e.code === 'Slash') e.preventDefault();
+  if (!keys[e.code]) press(e.code);
+  keys[e.code] = 1;
+});
+addEventListener('keyup', e => keys[e.code] = 0);
 
-    <header>
-      <h1>🚀 ASTRO ESCAPE</h1>
-      <p>¡Sobrevive en el espacio y consigue la mayor puntuación!</p>
-    </header>
+function press(c) {
+  if (net.on && mode === 'menu') {
+    if (c === 'KeyA' || c === 'KeyD') { net.sel = (net.sel + (c === 'KeyA' ? D.length - 1 : 1)) % D.length; sel[net.L] = net.sel; net.room.presence({ sel: net.sel }); }
+    if (c === 'KeyF') { net.rdy = 1; ready[net.L] = 1; net.room.presence({ rdy: 1 }); chk(); }
+    return;
+  }
+  if (mode === 'menu') {
+    const n = D.length;
+    if (c === 'KeyA') sel[0] = (sel[0] + n - 1) % n;
+    if (c === 'KeyD') sel[0] = (sel[0] + 1) % n;
+    if (c === 'ArrowLeft') sel[1] = (sel[1] + n - 1) % n;
+    if (c === 'ArrowRight') sel[1] = (sel[1] + 1) % n;
+    if (c === 'KeyF') ready[0] = 1;
+    if (c === 'Comma') ready[1] = 1;
+    if (c === 'KeyV') cpu = !cpu;
+    if (ready[0] && (ready[1] || cpu)) start(true);
+  } else if (mode === 'end' && c === 'Enter') {
+    if (Math.max(...wins) >= 2) { mode = 'menu'; ready = [0, 0]; if (net.on) { net.rdy = 0; net.room.presence({ rdy: 0, ph: 'menu' }); } } else if (!net.on) start(false);
+  } else if (mode === 'play') {
+    CT.forEach((k, i) => { if (net.on ? i === 0 : !(cpu && i)) ['wi', 'of', 'de'].forEach(a => { if (c === k[a]) act(P[net.on ? net.L : i], a); }); });
+  }
+}
 
-    <!-- Puntuación -->
-    <section class="score-board">
-      <span>⭐ PUNTUACIÓN</span>
-      <span id="score">0</span>
-    </section>
+function start(newMatch) {
+  if (newMatch) wins = [0, 0];
+  if (net.on) {
+    sel[net.L] = net.sel; sel[net.R] = (net.rp ? net.rp.sel | 0 : 0) % D.length;
+    net.rn = newMatch ? 1 : net.rn + 1; net.hn = 0; net.cn = 0; net.seenHn = 0; net.seenCn = 0; net.rd = null;
+    net.room.presence({ cs: null, hn: 0, lv: 3, rn: net.rn, ph: 'play', fc: 0 });
+  }
+  P = [0, 1].map(i => ({ i, m: D[sel[i]], x: i ? W - 90 : 90, y: H / 2, vx: 0, vy: 0, ar: i ? Math.PI : 0, lives: 3, inv: 0, cd: { ba: 0, wi: 0, of: 0, de: 0 }, tx: 0, ty: 0, tt: 0 }));
+  B = []; Q = []; calm = 0; margin = 0; cnt = 3; mode = 'play';
+}
 
-    <!-- Dificultad -->
-    <section class="difficulty-container">
-      <label for="difficulty">⚡ DIFICULTAD</label>
+function sh(p, x, y, a, sp, r, ex) {
+  B.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r, o: p.i, c: p.m.color, ...ex });
+}
 
-      <select id="difficulty">
-        <option value="easy">🟢 Fácil</option>
-        <option value="normal" selected>🔵 Normal</option>
-        <option value="hard">🟠 Difícil</option>
-        <option value="nightmare">🔴 Pesadilla</option>
-        <option value="lunatic">🟣 Lunático</option>
-      </select>
-    </section>
+function act(p, k) {
+  if (cnt > 0 || p.cd[k] > 0) return;
+  const foc = focus(p), m = p.m[k];
+  p.cd[k] = foc && m.f && m.f.cd ? m.f.cd : m.cd;
+  if (k === 'de') p.inv = Math.max(p.inv, m.inv);
+  if (net.on) net.room.presence({ cs: { n: ++net.cn, k, f: foc ? 1 : 0, x: +p.x.toFixed(1), y: +p.y.toFixed(1), a: +p.ar.toFixed(2) } });
+  cast(p, k, foc);
+}
 
-    <!-- Combustible -->
-    <section class="fuel-container">
+function cast(p, k, foc) {
+  const b = p.m[k], s = foc && b.f ? { ...b, ...b.f } : b, o = P[1 - p.i];
+  const gp = Math.floor(Math.random() * Math.max(1, s.k - 3)), dir = o.x > p.x ? 0 : Math.PI;
+  for (let n = 0; n < s.k; n++) {
+    if (s.pat === 'fan') sh(p, p.x, p.y, p.ar + (s.k > 1 ? (n - (s.k - 1) / 2) * s.spread / (s.k - 1) : 0), s.sp, s.r);
+    if (s.pat === 'ring') sh(p, p.x, p.y, p.ar + n * 6.2832 / s.k, s.sp, s.r);
+    if (s.pat === 'burst') Q.push({ t: n * 0.09, f: () => sh(p, p.x, p.y, p.ar, s.sp, s.r) });
+    if (s.pat === 'spiral') Q.push({ t: n * 0.05, f: () => sh(p, p.x, p.y, p.ar + n * 0.55, s.sp, s.r) });
+    if (s.pat === 'rain') sh(p, o.x + (n - (s.k - 1) / 2) * s.gap, 0, Math.PI / 2, s.sp, s.r);
+    if (s.pat === 'curve') sh(p, p.x, p.y, p.ar + (n - (s.k - 1) / 2) * s.spread / Math.max(1, s.k - 1), s.sp, s.r, { tr: (n % 2 ? 1 : -1) * s.tr });
+    if (s.pat === 'bloom') sh(p, p.x, p.y, p.ar + n * 6.2832 / s.k, s.sp, s.r, { ac: s.ac });
+    if (s.pat === 'rebound') sh(p, p.x, p.y, p.ar + n * 6.2832 / s.k, s.sp, s.r, { ac: -2.5, re: s.re, rsp: s.rsp });
+    if (s.pat === 'layers') for (let l = 0; l < s.L; l++) sh(p, p.x, p.y, p.ar + n * 6.2832 / s.k + l * 0.2, s.sp + l * s.step, s.r);
+    if (s.pat === 'wall' && (n < gp || n >= gp + 3)) sh(p, p.x, (n + 0.5) * H / s.k, dir, s.sp, s.r);
+    if (s.pat === 'arms') for (let a = 0; a < s.arms; a++) Q.push({ t: n * 0.05, f: () => sh(p, p.x, p.y, p.ar + n * s.tw + a * 6.2832 / s.arms, s.sp, s.r) });
+  }
+}
 
-      <div class="fuel-info">
-        <span>⛽ COMBUSTIBLE</span>
-        <span id="fuelText">100%</span>
-      </div>
+function ai(p, dt) {
+  if ((p.tt -= dt) <= 0) { p.tt = 0.6 + Math.random() * 0.6; p.tx = margin + 20 + Math.random() * (W - 2 * margin - 40); p.ty = 30 + Math.random() * (H - 60); }
+  let vx = Math.sign(p.tx - p.x), vy = Math.sign(p.ty - p.y);
+  B.forEach(b => { if (b.o !== p.i) { const dx = p.x - b.x, dy = p.y - b.y, d = Math.hypot(dx, dy); if (d < 70) { vx += dx / d * 3; vy += dy / d * 3; } } });
+  const l = Math.hypot(vx, vy) || 1;
+  p.x += vx / l * Math.min(1, l) * p.m.speed * 0.85 * dt;
+  p.y += vy / l * Math.min(1, l) * p.m.speed * 0.85 * dt;
+  if (Math.random() < 0.5) act(p, 'ba');
+  if (Math.random() < 0.02) act(p, ACT[1 + Math.floor(Math.random() * 3)]);
+}
 
-      <div class="fuel-track">
-        <div id="fuelBar"></div>
-      </div>
+function endRound(l) {
+  if (mode !== 'play') return;
+  const w = 1 - l; wins[w]++; mode = 'end';
+  msg = Math.max(...wins) >= 2 ? `${P[w].m.name} gana el duelo` : `Ronda para ${P[w].m.name}`;
+  if (net.on) {
+    net.room.presence({ ph: 'end' });
+    if (Math.max(...wins) < 2) setTimeout(() => { if (mode === 'end' && net.on) start(false); }, 2500);
+  }
+}
 
-    </section>
+function remoteStep(p, dt) {
+  const r = net.rd; if (!r || r.x === undefined) return;
+  const t = Math.min(1, dt * 14);
+  p.x += (r.x - p.x) * t; p.y += (r.y - p.y) * t;
+}
 
-    <!-- Área del videojuego -->
-    <canvas id="gameCanvas" width="480" height="640">
-      Tu navegador no admite Canvas.
-    </canvas>
+function chk() {
+  if (mode === 'menu' && net.rdy && net.rp && net.rp.rdy && net.rp.ph !== 'end') start(true);
+}
 
-    <!-- Mensajes -->
-    <section class="game-controls">
-      <p id="message">¡Prepárate para la aventura espacial!</p>
+function onPeers(ch) {
+  const ps = ch.peers.filter(p => p.kind === 'viewer').sort((a, b) => a.peer < b.peer ? -1 : 1);
+  const mi = ps.findIndex(p => p.isMe && p.sameTab);
+  net.n = ps.length;
+  if (mi < 0 || mi > 1) return;
+  net.L = mi; net.R = 1 - mi;
+  const rp = ps[1 - mi] ? ps[1 - mi].presence : null;
+  net.rp = rp; net.rd = rp && rp.rn === net.rn ? rp : null;
+  if (mode === 'menu') {
+    sel[net.L] = net.sel; ready[net.L] = net.rdy;
+    sel[net.R] = (rp ? rp.sel | 0 : 0) % D.length; ready[net.R] = rp && rp.rdy ? 1 : 0;
+    chk(); return;
+  }
+  if (!P.length) return;
+  if (!rp && mode === 'play') { wins[net.L] = 2; mode = 'end'; msg = 'El rival se desconectó. Ganas el duelo'; return; }
+  const d = net.rd, rr = P[net.R]; if (!d) return;
+  if (d.hn !== undefined && d.hn !== net.seenHn) { net.seenHn = d.hn; B = []; Q = []; calm = 0; margin = 0; rr.inv = 1.5; rr.lives = d.lv; if (d.lv <= 0) endRound(net.R); }
+  if (d.cs && d.cs.n !== net.seenCn) {
+    net.seenCn = d.cs.n;
+    if (mode === 'play') { rr.x = d.cs.x; rr.y = d.cs.y; rr.ar = d.cs.a; if (d.cs.k === 'de') rr.inv = Math.max(rr.inv, rr.m.de.inv); rr.cd[d.cs.k] = rr.m[d.cs.k].cd; cast(rr, d.cs.k, d.cs.f); }
+  }
+}
 
-      <button id="startButton">
-        COMENZAR JUEGO
-      </button>
-    </section>
+async function joinRoom() {
+  const st = document.getElementById('st');
+  const code = document.getElementById('code').value.trim().toLowerCase().replace(/[^a-z0-9_.-]/g, '');
+  if (!code) { st.textContent = 'Escribe un código de sala.'; return; }
+  if (!window.claude) { st.textContent = 'El modo online no está disponible aquí.'; return; }
+  try {
+    const lobby = await claude.use('room');
+    if (!lobby) { st.textContent = 'El modo online no está disponible para ti en este enlace.'; return; }
+    net.room = await lobby.join(code);
+  } catch (e) { st.textContent = 'No se pudo entrar a la sala. Inténtalo de nuevo.'; return; }
+  Object.assign(net, { on: true, code, rn: 0, rdy: 0, sel: sel[0], rp: null, rd: null });
+  cpu = false; mode = 'menu'; ready = [0, 0]; P = [];
+  net.room.onPeers(onPeers);
+  net.room.presence({ sel: net.sel, rdy: 0, ph: 'menu', rn: 0 });
+  st.textContent = `En la sala ${code}. A D para elegir, F para confirmar.`;
+  document.activeElement.blur();
+}
+document.getElementById('join').onclick = joinRoom;
+document.getElementById('code').onkeydown = e => { if (e.key === 'Enter') joinRoom(); };
 
-    <!-- Controles táctiles -->
-    <section class="mobile-controls">
+function update(dt) {
+  if (cnt > 0) cnt -= dt; else calm += dt;
+  if (calm > 10) margin = Math.min(W / 2 - 40, margin + 22 * dt);
+  P.forEach(p => {
+    const ox = p.x, oy = p.y, k = ctl(p), foc = focus(p);
+    for (const a in p.cd) p.cd[a] = Math.max(0, p.cd[a] - dt);
+    p.inv = Math.max(0, p.inv - dt);
+    if (net.on && p.i === net.R) remoteStep(p, dt);
+    else if (cpu && p.i) ai(p, dt);
+    else {
+      let dx = (keys[k.rt] ? 1 : 0) - (keys[k.lf] ? 1 : 0), dy = (keys[k.dn] ? 1 : 0) - (keys[k.up] ? 1 : 0);
+      const l = Math.hypot(dx, dy) || 1, sp = p.m.speed * (foc ? 0.45 : 1);
+      p.x += dx / l * sp * dt; p.y += dy / l * sp * dt;
+      if (keys[k.ba]) act(p, 'ba');
+    }
+    p.x = Math.max(margin + 10, Math.min(W - margin - 10, p.x));
+    p.y = Math.max(10, Math.min(H - 10, p.y));
+    p.vx = (p.x - ox) / dt; p.vy = (p.y - oy) / dt;
+  });
+  P.forEach(p => {
+    if (net.on && p.i === net.R && net.rd) { p.ar = net.rd.ar; return; }
+    const o = P[1 - p.i], foc = focus(p), lead = foc ? 0.25 : 0;
+    const t = Math.atan2(o.y + o.vy * lead - p.y, o.x + o.vx * lead - p.x);
+    let d = t - p.ar; d = Math.atan2(Math.sin(d), Math.cos(d));
+    const m = (foc ? 14 : 2) * dt; p.ar += Math.max(-m, Math.min(m, d));
+  });
+  if (net.on && mode === 'play' && (net.tick = (net.tick || 0) + 1) % 3 === 0) { const l = P[net.L]; net.room.presence({ x: +l.x.toFixed(1), y: +l.y.toFixed(1), ar: +l.ar.toFixed(2), fc: focus(l) ? 1 : 0 }); }
+  Q = Q.filter(q => (q.t -= dt) > 0 || (q.f(), false));
+  B.forEach(b => {
+    if (b.tr) { const c = Math.cos(b.tr * dt), sn = Math.sin(b.tr * dt), vx = b.vx * c - b.vy * sn; b.vy = b.vx * sn + b.vy * c; b.vx = vx; }
+    if (b.ac) { const f = 1 + b.ac * dt; b.vx *= f; b.vy *= f; }
+    if (b.re !== undefined && (b.re -= dt) <= 0) { const o = P[1 - b.o], a = Math.atan2(o.y - b.y, o.x - b.x); b.vx = Math.cos(a) * b.rsp; b.vy = Math.sin(a) * b.rsp; delete b.re; delete b.ac; }
+    b.x += b.vx * dt; b.y += b.vy * dt;
+  });
+  B = B.filter(b => b.x > -40 && b.x < W + 40 && b.y > -40 && b.y < H + 40);
+  for (const p of P) {
+    if (p.inv > 0 || (net.on && p.i !== net.L)) continue;
+    if (B.some(b => b.o !== p.i && Math.hypot(b.x - p.x, b.y - p.y) < b.r + 3)) {
+      p.lives--; p.inv = 1.5; B = []; Q = []; calm = 0; margin = 0;
+      if (net.on) net.room.presence({ lv: p.lives, hn: ++net.hn });
+      if (p.lives <= 0) endRound(p.i);
+      break;
+    }
+  }
+}
 
-      <button id="leftButton" aria-label="Izquierda">⬅️</button>
-      <button id="upButton" aria-label="Arriba">⬆️</button>
-      <button id="downButton" aria-label="Abajo">⬇️</button>
-      <button id="rightButton" aria-label="Derecha">➡️</button>
+function text(t, x, y, sz = 18, col = '#ece8ff', al = 'center') {
+  g.font = `${sz}px Georgia, serif`; g.fillStyle = col; g.textAlign = al; g.fillText(t, x, y);
+}
 
-    </section>
+function maiden(x, y, m, foc, alpha = 1) {
+  g.globalAlpha = alpha;
+  g.fillStyle = m.hair; g.beginPath(); g.arc(x, y - 4, 13, 0, 7); g.fill();
+  g.fillStyle = m.color; g.beginPath(); g.moveTo(x, y + 2); g.lineTo(x - 12, y + 18); g.lineTo(x + 12, y + 18); g.fill();
+  g.fillStyle = '#ffe9dc'; g.beginPath(); g.arc(x, y - 3, 8, 0, 7); g.fill();
+  g.fillStyle = m.color; g.beginPath(); g.moveTo(x - 14, y - 9); g.lineTo(x, y - 30); g.lineTo(x + 14, y - 9); g.fill();
+  g.globalAlpha = 1;
+}
 
-    <footer>
-      <p>WASD: Mover nave | ⛽ Recargar | ⭐ Bonus | ☄️ Esquivar</p>
-    </footer>
+function draw() {
+  const bg = g.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#241a52'); bg.addColorStop(1, '#0d0a26');
+  g.fillStyle = bg; g.fillRect(0, 0, W, H);
+  stars.forEach(s => { s.y = (s.y + s.s / 60) % H; g.fillStyle = 'rgba(255,240,255,.6)'; g.beginPath(); g.arc(s.x, s.y, s.r, 0, 7); g.fill(); });
+  if (mode === 'menu') {
+    text('Maiden & Spell', W / 2, 80, 46, '#ffd1f0');
+    text('Duelo de hechizos: esquiva, apunta y no recibas ningún golpe', W / 2, 112, 16, '#a49fcf');
+    [0, 1].forEach(i => {
+      const m = D[sel[i]], x = W * (0.25 + 0.5 * i);
+      maiden(x, 220, m); text(m.name, x, 275, 24, m.color);
+      text(i && cpu ? 'CPU' : `Jugador ${i + 1}`, x, 160, 18);
+      const st = i && cpu || ready[i];
+      text(st ? 'Lista' : (net.on ? (i === net.L ? 'A D elegir, F confirmar' : 'Esperando...') : i ? '← → elegir, coma confirmar' : 'A D elegir, F confirmar'), x, 400, 14, st ? '#7ddf7a' : '#ece8ff');
+    });
+    text(net.on ? `Sala ${net.code}: ${net.n >= 2 ? 'rival conectado' : 'esperando rival'}` : `V: jugar contra la CPU (${cpu ? 'activado' : 'desactivado'})`, W / 2, 450, 14, '#a49fcf');
+    return;
+  }
+  g.fillStyle = 'rgba(160,50,110,.55)'; g.fillRect(0, 0, margin, H); g.fillRect(W - margin, 0, margin, H);
+  B.forEach(b => {
+    g.shadowColor = b.c; g.shadowBlur = 12; g.fillStyle = b.c; g.beginPath(); g.arc(b.x, b.y, b.r + 1.5, 0, 7); g.fill();
+    g.shadowBlur = 0; g.fillStyle = '#fff'; g.beginPath(); g.arc(b.x, b.y, b.r * 0.6, 0, 7); g.fill();
+  });
+  P.forEach(p => {
+    const foc = focus(p), blink = p.inv > 0 && Math.floor(p.inv * 12) % 2;
+    g.strokeStyle = p.m.color; g.globalAlpha = foc ? 0.9 : 0.4; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(p.x + Math.cos(p.ar) * 20, p.y + Math.sin(p.ar) * 20); g.lineTo(p.x + Math.cos(p.ar) * 46, p.y + Math.sin(p.ar) * 46); g.stroke();
+    g.globalAlpha = 1;
+    maiden(p.x, p.y, p.m, foc, blink ? 0.35 : 1);
+    g.fillStyle = '#fff'; g.shadowColor = '#fff'; g.shadowBlur = foc ? 8 : 0; g.beginPath(); g.arc(p.x, p.y, 3, 0, 7); g.fill(); g.shadowBlur = 0;
+    if (foc) { g.strokeStyle = '#fff'; g.lineWidth = 1; g.beginPath(); g.arc(p.x, p.y, 7, 0, 7); g.stroke(); }
+    const x = p.i ? W - 12 : 12, al = p.i ? 'right' : 'left';
+    text(`${p.m.name}  ${'♥'.repeat(Math.max(0, p.lives))}  ${'★'.repeat(wins[p.i])}`, x, 22, 17, p.m.color, al);
+    ['wi', 'of', 'de'].forEach((a, j) => {
+      const w = 60, bx = p.i ? W - 12 - w : 12, by = 32 + j * 9, f = 1 - p.cd[a] / p.m[a].cd;
+      g.fillStyle = 'rgba(255,255,255,.15)'; g.fillRect(bx, by, w, 5);
+      g.fillStyle = f >= 1 ? p.m.color : '#6a649c'; g.fillRect(bx, by, w * f, 5);
+    });
+  });
+  if (cnt > 0) text(String(Math.ceil(cnt)), W / 2, H / 2, 64, '#ffd1f0');
+  if (calm > 10) text('Las paredes se cierran', W / 2, 24, 15, '#f06f9b');
+  if (mode === 'end') {
+    g.fillStyle = 'rgba(11,9,32,.75)'; g.fillRect(0, 0, W, H);
+    text(msg, W / 2, H / 2, 32, '#ffd1f0');
+    text(Math.max(...wins) >= 2 ? 'Enter para volver al menú' : 'Enter para la siguiente ronda', W / 2, H / 2 + 34, 16, '#a49fcf');
+  }
+}
 
-  </main>
-
-  <script src="script.js"></script>
-
+let last = performance.now();
+(function loop(t) {
+  const dt = Math.min(0.05, (t - last) / 1000); last = t;
+  if (mode === 'play') update(dt);
+  draw(); requestAnimationFrame(loop);
+})(last);
+</script>
 </body>
 </html>
