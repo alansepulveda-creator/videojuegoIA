@@ -2,10 +2,29 @@
   "name": "maiden-spell-online",
   "version": "1.0.0",
   "main": "server.js",
-  "scripts": {
-    "start": "node server.js"
-  },
-  "dependencies": {
-    "ws": "^8.18.0"
-  }
+  "scripts": { "start": "node server.js" },
+  "dependencies": { "ws": "^8.18.0" },
+  "maidens": [
+    {
+      "name": "Escarcha", "hair": "#d6f1ff", "color": "#5cc8ff", "speed": 230,
+      "ba": { "pat": "fan", "k": 1, "spread": 0, "sp": 300, "r": 3, "cd": 0.13, "f": { "sp": 390, "cd": 0.1 } },
+      "wi": { "pat": "curve", "k": 8, "spread": 1.0, "tr": 1.1, "sp": 170, "r": 4, "cd": 2.0 },
+      "of": { "pat": "arms", "k": 14, "arms": 2, "tw": 0.45, "sp": 150, "r": 4, "cd": 5 },
+      "de": { "pat": "layers", "k": 10, "L": 3, "step": 40, "sp": 90, "r": 4, "cd": 6, "inv": 1 }
+    },
+    {
+      "name": "Tormenta", "hair": "#fff2a6", "color": "#ffd84a", "speed": 260,
+      "ba": { "pat": "fan", "k": 1, "spread": 0, "sp": 340, "r": 3, "cd": 0.16, "f": { "k": 3, "spread": 0.25 } },
+      "wi": { "pat": "burst", "k": 5, "sp": 260, "r": 4, "cd": 1.8 },
+      "of": { "pat": "wall", "k": 13, "sp": 170, "r": 4, "cd": 5 },
+      "de": { "pat": "rebound", "k": 10, "sp": 220, "re": 0.8, "rsp": 230, "r": 4, "cd": 6, "inv": 1.2 }
+    },
+    {
+      "name": "Sol", "hair": "#ffd1a1", "color": "#ff9a52", "speed": 210,
+      "ba": { "pat": "fan", "k": 2, "spread": 0.12, "sp": 260, "r": 3, "cd": 0.18, "f": { "k": 4, "spread": 0.2 } },
+      "wi": { "pat": "bloom", "k": 12, "sp": 45, "ac": 0.9, "r": 5, "cd": 2.2 },
+      "of": { "pat": "arms", "k": 12, "arms": 3, "tw": 0.5, "sp": 130, "r": 4, "cd": 6 },
+      "de": { "pat": "fan", "k": 9, "spread": 3, "sp": 100, "r": 5, "cd": 6, "inv": 1.2 }
+    }
+  ]
 }

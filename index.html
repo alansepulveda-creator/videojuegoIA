@@ -43,26 +43,28 @@ input#code:focus { outline: none; border-color: #ffd84a !important; }
   <span id="st" style="color:#a49fcf;"></span>
 </div>
 
-<p style="font-size: 0.85rem; line-height: 1.5; background: rgba(255,255,255,0.03); padding: 12px; border-radius: 8px;">
-  <strong>Jugador 1 (Anfitrión):</strong> WASD (mover), Shift (focus), F (básico), G (amplio), H (ofensivo), T (defensivo).<br>
-  <strong>Jugador 2 (Invitado):</strong> Usa los <em>mismos controles del Jugador 1</em> (WASD, Shift, F, G, H, T).<br>
-  <em>Nota: En modo local (sin conectar), el J2 usa las flechas. Tecla 'V' para activar CPU.</em>
+<p style="font-size: 0.85rem; line-height: 1.6; background: rgba(255,255,255,0.03); padding: 12px; border-radius: 8px;">
+  <strong>Controles (online y contra la CPU)</strong><br>
+  Mover: <b>WASD</b> o <b>flechas</b> · Focus: <b>Shift</b><br>
+  Disparo básico: <b>J</b> o <b>Z</b> (mantén pulsado) · Tiro amplio: <b>K</b> o <b>X</b><br>
+  Especial ofensivo: <b>L</b> o <b>C</b> · Especial defensivo: <b>Espacio</b><br>
+  <em>Dos jugadores en un teclado: J1 WASD, Shift, F G H T · J2 flechas, Shift der., coma, punto, barra, punto y coma. V activa la CPU.</em>
 </p>
 </main>
 
 <script type="application/json" id="data">
 {"maidens":[
- {"name":"Escarcha","hair":"#d6f1ff","color":"#5cc8ff","speed":175,
+ {"name":"Escarcha","hair":"#d6f1ff","color":"#5cc8ff","speed":230,
   "ba":{"pat":"fan","k":1,"spread":0,"sp":300,"r":3,"cd":0.13,"f":{"sp":390,"cd":0.1}},
   "wi":{"pat":"curve","k":8,"spread":1.0,"tr":1.1,"sp":170,"r":4,"cd":2.0},
   "of":{"pat":"arms","k":14,"arms":2,"tw":0.45,"sp":150,"r":4,"cd":5},
   "de":{"pat":"layers","k":10,"L":3,"step":40,"sp":90,"r":4,"cd":6,"inv":1}},
- {"name":"Tormenta","hair":"#fff2a6","color":"#ffd84a","speed":200,
+ {"name":"Tormenta","hair":"#fff2a6","color":"#ffd84a","speed":260,
   "ba":{"pat":"fan","k":1,"spread":0,"sp":340,"r":3,"cd":0.16,"f":{"k":3,"spread":0.25}},
   "wi":{"pat":"burst","k":5,"sp":260,"r":4,"cd":1.8},
   "of":{"pat":"wall","k":13,"sp":170,"r":4,"cd":5},
   "de":{"pat":"rebound","k":10,"sp":220,"re":0.8,"rsp":230,"r":4,"cd":6,"inv":1.2}},
- {"name":"Sol","hair":"#ffd1a1","color":"#ff9a52","speed":160,
+ {"name":"Sol","hair":"#ffd1a1","color":"#ff9a52","speed":210,
   "ba":{"pat":"fan","k":2,"spread":0.12,"sp":260,"r":3,"cd":0.18,"f":{"k":4,"spread":0.2}},
   "wi":{"pat":"bloom","k":12,"sp":45,"ac":0.9,"r":5,"cd":2.2},
   "of":{"pat":"arms","k":12,"arms":3,"tw":0.5,"sp":130,"r":4,"cd":6},
@@ -78,42 +80,43 @@ const g = cv.getContext('2d');
 const W = 640;
 const H = 480;
 
-const CT = [
-  { up:'KeyW', dn:'KeyS', lf:'KeyA', rt:'KeyD', fo:'ShiftLeft', ba:'KeyF', wi:'KeyG', of:'KeyH', de:'KeyT' },
-  { up:'ArrowUp', dn:'ArrowDown', lf:'ArrowLeft', rt:'ArrowRight', fo:'ShiftRight', ba:'Comma', wi:'Period', of:'Slash', de:'Semicolon' }
+// Controles: cada acción admite varias teclas
+const SOLO = { // online y contra la CPU
+  up:['KeyW','ArrowUp'], dn:['KeyS','ArrowDown'], lf:['KeyA','ArrowLeft'], rt:['KeyD','ArrowRight'],
+  fo:['ShiftLeft','ShiftRight'], ba:['KeyJ','KeyZ'], wi:['KeyK','KeyX'], of:['KeyL','KeyC'], de:['Space']
+};
+const LOCAL = [ // dos jugadores en el mismo teclado
+  { up:['KeyW'], dn:['KeyS'], lf:['KeyA'], rt:['KeyD'], fo:['ShiftLeft'], ba:['KeyF'], wi:['KeyG'], of:['KeyH'], de:['KeyT'] },
+  { up:['ArrowUp'], dn:['ArrowDown'], lf:['ArrowLeft'], rt:['ArrowRight'], fo:['ShiftRight'], ba:['Comma'], wi:['Period'], of:['Slash'], de:['Semicolon'] }
 ];
+const LBL = { solo: ['K / X', 'L / C', 'Espacio'], local: [['G', 'H', 'T'], ['.', '/', ';']] };
 const ACT = ['ba', 'wi', 'of', 'de'];
 
-// 2. Variables de estado (Orden corregido para evitar Temporal Dead Zone)
-const keys = {}; 
-const net = { on: false, L: 0, R: 1, rd: null, rn: 0, cn: 0, hn: 0, seenCn: 0, seenHn: 0, sel: 0, rdy: 0, code: '', tick: 0 };
+// 2. Estado (rp = estado crudo del rival, rd = estado del rival solo si es de esta ronda)
+const keys = {};
+const net = { on: false, L: 0, R: 1, rp: {}, rd: null, n: 0, rn: 0, cn: 0, hn: 0, seenCn: 0, seenHn: 0, sel: 0, rdy: 0, code: '', tick: 0 };
+let cpu = false;
+const solo = () => net.on || cpu;
+const ctl = p => solo() ? SOLO : LOCAL[p.i];
+const held = (k, a) => k[a].some(c => keys[c]);
+const focus = p => net.on && p.i === net.R ? !!(net.rd && net.rd.fc) : held(ctl(p), 'fo');
 
-const ctl = p => CT[net.on ? 0 : p.i];
-const focus = p => net.on && p.i === net.R ? !!(net.rd && net.rd.fc) : !!keys[ctl(p).fo];
-
-const stars = Array.from({ length: 50 }, () => ({ 
-  x: Math.random() * W, 
-  y: Math.random() * H, 
-  r: Math.random() * 1.4 + 0.4, 
-  s: 5 + Math.random() * 15 
+const stars = Array.from({ length: 50 }, () => ({
+  x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.4 + 0.4, s: 5 + Math.random() * 15
 }));
 
 let mode = 'menu';
 let sel = [0, 1];
 let ready = [0, 0];
-let cpu = false;
 let wins = [0, 0];
 let P = [], B = [], Q = [], calm = 0, margin = 0, msg = '', cnt = 0;
 let ws = null, myId = '', pendingPresence = {}, presenceTimer = null;
 
-// 3. Utilidades de red
-function showStatus(msg, color) {
+// 3. Red
+function showStatus(text, color) {
   const st = document.getElementById('st');
-  st.textContent = msg;
-  if (color === 'red') st.style.color = '#ff6b6b';
-  else if (color === 'green') st.style.color = '#7ddf7a';
-  else if (color === 'orange') st.style.color = '#ffd84a';
-  else st.style.color = '#a49fcf';
+  st.textContent = text;
+  st.style.color = color === 'red' ? '#ff6b6b' : color === 'green' ? '#7ddf7a' : color === 'orange' ? '#ffd84a' : '#a49fcf';
 }
 
 function sendPresence(data) {
@@ -121,7 +124,7 @@ function sendPresence(data) {
   Object.assign(pendingPresence, data);
   if (!presenceTimer) {
     presenceTimer = setTimeout(() => {
-      ws.send(JSON.stringify({ t: 'pr', p: pendingPresence }));
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'pr', p: pendingPresence }));
       pendingPresence = {};
       presenceTimer = null;
     }, 33);
@@ -132,125 +135,91 @@ function generateCode() {
   return Math.random().toString(36).substring(2, 6).toUpperCase();
 }
 
-function createRoom() {
-  let code = document.getElementById('code').value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
-  if (!code) {
-    code = generateCode();
-    document.getElementById('code').value = code;
-  }
-  
-  showStatus('🔄 Creando sala...', 'gray');
+function connect(type, code, isCreator) {
+  showStatus(isCreator ? '🔄 Creando sala...' : '🔄 Buscando sala...', 'gray');
   disableInputs();
-
   const url = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host;
   ws = new WebSocket(url);
-  
-  ws.onopen = () => ws.send(JSON.stringify({ t: 'create', code }));
-  ws.onmessage = (e) => handleMessage(e, code, true);
+  ws.onopen = () => ws.send(JSON.stringify({ t: type, code }));
+  ws.onmessage = e => handleMessage(e, code, isCreator);
   ws.onclose = () => handleDisconnect();
   ws.onerror = () => { showStatus('❌ Error de conexión.', 'red'); resetUI(); };
+}
+
+function createRoom() {
+  let code = document.getElementById('code').value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!code) { code = generateCode(); document.getElementById('code').value = code; }
+  connect('create', code, true);
 }
 
 function joinRoom() {
   const code = document.getElementById('code').value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
-  if (!code) { 
-    showStatus('⚠️ Escribe el código que te dio tu amigo.', 'red'); 
-    return; 
-  }
-  
-  showStatus('🔄 Buscando sala...', 'gray');
-  disableInputs();
-
-  const url = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host;
-  ws = new WebSocket(url);
-  
-  ws.onopen = () => ws.send(JSON.stringify({ t: 'join', code }));
-  ws.onmessage = (e) => handleMessage(e, code, false);
-  ws.onclose = () => handleDisconnect();
-  ws.onerror = () => { showStatus('❌ Error de conexión.', 'red'); resetUI(); };
+  if (!code) { showStatus('⚠️ Escribe el código que te dio tu amigo.', 'red'); return; }
+  connect('join', code, false);
 }
 
 function handleMessage(e, code, isCreator) {
   const d = JSON.parse(e.data);
-  
-  if (d.t === 'exists') {
-    showStatus('❌ Ese código ya está en uso. Prueba con otro.', 'red');
-    ws.close(); 
-    resetUI(); 
-    return;
+
+  if (d.t === 'exists') { showStatus('❌ Ese código ya está en uso. Prueba con otro.', 'red'); ws.close(); resetUI(); return; }
+  if (d.t === 'not_found') { showStatus('❌ Sala no encontrada. Verifica el código.', 'red'); ws.close(); resetUI(); return; }
+  if (d.t === 'full') { showStatus('❌ La sala está llena (máx. 2 jugadores).', 'red'); ws.close(); resetUI(); return; }
+  if (d.t !== 'st') return;
+
+  myId = d.you;
+  const peers = d.peers;
+  const myIndex = peers.findIndex(p => p.id === myId);
+  if (myIndex === -1) return;
+
+  const first = !net.on;
+  net.L = myIndex; net.R = 1 - myIndex; net.on = true; net.code = code; net.n = peers.length;
+  const other = peers.find(p => p.id !== myId);
+  net.rp = other ? other.p : {};
+  net.rd = net.rp.rn === net.rn ? net.rp : null;
+
+  if (first) {
+    cpu = false;
+    sel[net.L] = net.sel;
+    sendPresence({ sel: net.sel, rdy: 0, ph: 'menu', rn: 0 });
   }
-  if (d.t === 'not_found') {
-    showStatus('❌ Sala no encontrada. Verifica el código.', 'red');
-    ws.close(); 
-    resetUI(); 
-    return;
+
+  if (isCreator) {
+    document.getElementById('displayCode').textContent = code;
+    document.getElementById('roomInfo').style.display = 'block';
   }
-  if (d.t === 'full') {
-    showStatus('❌ La sala está llena (máx. 2 jugadores).', 'red');
-    ws.close(); 
-    resetUI(); 
-    return;
-  }
-  
-  if (d.t === 'st') {
-    myId = d.you;
-    const peers = d.peers;
-    const myIndex = peers.findIndex(p => p.id === myId);
-    if (myIndex === -1) return;
-    
-    net.L = myIndex;
-    net.R = 1 - myIndex;
-    net.on = true;
-    net.code = code;
-    
-    const other = peers.find(p => p.id !== myId);
-    net.rd = other ? other.p : {};
-    
-    if (isCreator) {
-      document.getElementById('displayCode').textContent = code;
-      document.getElementById('roomInfo').style.display = 'block';
+
+  if (peers.length >= 2) showStatus('✅ ¡Rival conectado! Elige personaje y confirma con Enter.', 'green');
+  else showStatus(isCreator ? '✅ Sala creada. Esperando al segundo jugador...' : '✅ ¡Unido a la sala! Esperando al anfitrión...', 'green');
+
+  if (mode === 'menu') {
+    sel[net.L] = net.sel; ready[net.L] = net.rdy;
+    sel[net.R] = (net.rp.sel !== undefined ? net.rp.sel : 0) % D.length;
+    ready[net.R] = net.rp.rdy ? 1 : 0;
+    chk();
+  } else if (mode === 'play') {
+    if (peers.length < 2) {
+      wins[net.L] = 2; mode = 'end'; msg = 'El rival se desconectó. ¡Ganas el duelo!';
+      showStatus('⚠️ El rival se desconectó.', 'orange');
+      ws.close();
+      return;
     }
-    
-    if (peers.length >= 2) {
-      showStatus('✅ ¡Rival conectado! A/D para elegir personaje, F para confirmar.', 'green');
-    } else {
-      if (isCreator) {
-        showStatus('✅ Sala creada. Esperando al segundo jugador...', 'green');
-      } else {
-        showStatus('✅ ¡Unido a la sala! Esperando al anfitrión...', 'green');
-      }
+    const r = net.rd;
+    if (!r) return;
+    if (r.hn !== undefined && r.hn !== net.seenHn) {
+      net.seenHn = r.hn;
+      B = []; Q = []; calm = 0; margin = 0;
+      const rr = P[net.R];
+      rr.inv = 1.5; rr.lives = r.lv;
+      if (r.lv <= 0) endRound(net.R);
     }
-    
-    if (mode === 'menu') {
-      sel[net.R] = (net.rd.sel !== undefined ? net.rd.sel : 0) % D.length;
-      ready[net.R] = net.rd.rdy ? 1 : 0;
-      chk();
-    } else if (mode === 'play') {
-      if (peers.length < 2) {
-        wins[net.L] = 2; 
-        mode = 'end'; 
-        msg = 'El rival se desconectó. ¡Ganas el duelo!';
-        showStatus('⚠️ El rival se desconectó.', 'orange');
-        resetUI(); 
-        return;
-      }
-      if (net.rd.cs && net.rd.cs.n !== net.seenCn) {
-        net.seenCn = net.rd.cs.n;
+    if (r.cs && r.cs.n !== net.seenCn) {
+      net.seenCn = r.cs.n;
+      if (mode === 'play') {
         const rr = P[net.R];
-        rr.x = net.rd.cs.x; 
-        rr.y = net.rd.cs.y; 
-        rr.ar = net.rd.cs.a;
-        if (net.rd.cs.k === 'de') rr.inv = Math.max(rr.inv, rr.m.de.inv);
-        rr.cd[net.rd.cs.k] = rr.m[net.rd.cs.k].cd;
-        cast(rr, net.rd.cs.k, net.rd.cs.f);
-      }
-      if (net.rd.hn !== undefined && net.rd.hn !== net.seenHn) {
-        net.seenHn = net.rd.hn;
-        B = []; Q = []; calm = 0; margin = 0;
-        const rr = P[net.R];
-        rr.inv = 1.5; 
-        rr.lives = net.rd.lv;
-        if (net.rd.lv <= 0) endRound(net.R);
+        rr.x = r.cs.x; rr.y = r.cs.y; rr.ar = r.cs.a;
+        if (r.cs.k === 'de') rr.inv = Math.max(rr.inv, rr.m.de.inv);
+        rr.cd[r.cs.k] = rr.m[r.cs.k].cd;
+        cast(rr, r.cs.k, r.cs.f);
       }
     }
   }
@@ -259,12 +228,9 @@ function handleMessage(e, code, isCreator) {
 function handleDisconnect() {
   if (net.on) {
     showStatus('⚠️ Conexión cerrada.', 'orange');
-    if (mode === 'play') { 
-      wins[net.L] = 2; 
-      mode = 'end'; 
-      msg = 'El rival se desconectó. ¡Ganas!'; 
-    }
-    net.on = false; 
+    if (mode === 'play') { wins[net.L] = 2; mode = 'end'; msg = 'El rival se desconectó. ¡Ganas!'; }
+    net.on = false;
+    net.rp = {}; net.rd = null; net.n = 0; net.rdy = 0;
     resetUI();
   }
 }
@@ -286,59 +252,50 @@ function resetUI() {
 // 4. Controles
 addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT') return;
-  if (e.code.startsWith('Arrow') || e.code === 'Slash') e.preventDefault();
+  if (e.code.startsWith('Arrow') || e.code === 'Slash' || e.code === 'Space') e.preventDefault();
   if (!keys[e.code]) press(e.code);
   keys[e.code] = 1;
 });
-
-addEventListener('keyup', e => {
-  keys[e.code] = 0;
-});
+addEventListener('keyup', e => { keys[e.code] = 0; });
 
 function press(c) {
+  const left = c === 'KeyA' || (solo() && c === 'ArrowLeft');
+  const right = c === 'KeyD' || (solo() && c === 'ArrowRight');
+  const ok = c === 'KeyF' || (solo() && ['Enter', 'Space', 'KeyJ', 'KeyZ'].includes(c));
+
   if (net.on && mode === 'menu') {
-    if (c === 'KeyA' || c === 'KeyD') { 
-      net.sel = (net.sel + (c === 'KeyA' ? D.length - 1 : 1)) % D.length; 
-      sel[net.L] = net.sel; 
-      sendPresence({ sel: net.sel }); 
+    if (left || right) {
+      net.sel = (net.sel + (left ? D.length - 1 : 1)) % D.length;
+      sel[net.L] = net.sel;
+      sendPresence({ sel: net.sel });
     }
-    if (c === 'KeyF') { 
-      net.rdy = 1; 
-      ready[net.L] = 1; 
-      sendPresence({ rdy: 1 }); 
-      chk(); 
-    }
+    if (ok) { net.rdy = 1; ready[net.L] = 1; sendPresence({ rdy: 1 }); chk(); }
     return;
   }
   if (mode === 'menu') {
     const n = D.length;
-    if (c === 'KeyA') sel[0] = (sel[0] + n - 1) % n;
-    if (c === 'KeyD') sel[0] = (sel[0] + 1) % n;
-    if (c === 'ArrowLeft') sel[1] = (sel[1] + n - 1) % n;
-    if (c === 'ArrowRight') sel[1] = (sel[1] + 1) % n;
-    if (c === 'KeyF') ready[0] = 1;
-    if (c === 'Comma') ready[1] = 1;
+    if (left) sel[0] = (sel[0] + n - 1) % n;
+    if (right) sel[0] = (sel[0] + 1) % n;
+    if (!solo()) {
+      if (c === 'ArrowLeft') sel[1] = (sel[1] + n - 1) % n;
+      if (c === 'ArrowRight') sel[1] = (sel[1] + 1) % n;
+      if (c === 'Comma') ready[1] = 1;
+    }
+    if (ok) ready[0] = 1;
     if (c === 'KeyV') cpu = !cpu;
     if (ready[0] && (ready[1] || cpu)) start(true);
-  } else if (mode === 'end' && c === 'Enter') {
-    if (Math.max(...wins) >= 2) { 
-      mode = 'menu'; 
-      ready = [0, 0]; 
-      if (net.on) { 
-        net.rdy = 0; 
-        sendPresence({ rdy: 0, ph: 'menu' }); 
-      } 
+  } else if (mode === 'end' && (c === 'Enter' || c === 'Space')) {
+    if (Math.max(...wins) >= 2) {
+      mode = 'menu'; ready = [0, 0];
+      if (net.on) { net.rdy = 0; sendPresence({ rdy: 0, ph: 'menu' }); }
     } else if (!net.on) {
       start(false);
     }
   } else if (mode === 'play') {
-    CT.forEach((k, i) => { 
-      if (net.on ? i === 0 : !(cpu && i)) {
-        ['wi', 'of', 'de'].forEach(a => { 
-          if (c === k[a]) act(P[net.on ? net.L : i], a); 
-        }); 
-      }
-    });
+    const trig = (k, p) => ['wi', 'of', 'de'].forEach(a => { if (k[a].includes(c)) act(p, a); });
+    if (net.on) trig(SOLO, P[net.L]);
+    else if (cpu) trig(SOLO, P[0]);
+    else { trig(LOCAL[0], P[0]); trig(LOCAL[1], P[1]); }
   }
 }
 
@@ -346,36 +303,17 @@ function press(c) {
 function start(newMatch) {
   if (newMatch) wins = [0, 0];
   if (net.on) {
-    sel[net.L] = net.sel; 
-    sel[net.R] = (net.rd && net.rd.sel !== undefined ? net.rd.sel : 0) % D.length;
-    net.rn = newMatch ? 1 : net.rn + 1; 
-    net.hn = 0; 
-    net.cn = 0; 
-    net.seenHn = 0; 
-    net.seenCn = 0; 
+    sel[net.L] = net.sel;
+    sel[net.R] = (net.rp && net.rp.sel !== undefined ? net.rp.sel : 0) % D.length;
+    net.rn = newMatch ? 1 : net.rn + 1;
+    net.hn = 0; net.cn = 0; net.seenHn = 0; net.seenCn = 0; net.rd = null;
     sendPresence({ cs: null, hn: 0, lv: 3, rn: net.rn, ph: 'play', fc: 0 });
   }
-  P = [0, 1].map(i => ({ 
-    i, 
-    m: D[sel[i]], 
-    x: i ? W - 90 : 90, 
-    y: H / 2, 
-    vx: 0, 
-    vy: 0, 
-    ar: i ? Math.PI : 0, 
-    lives: 3, 
-    inv: 0, 
-    cd: { ba: 0, wi: 0, of: 0, de: 0 }, 
-    tx: 0, 
-    ty: 0, 
-    tt: 0 
+  P = [0, 1].map(i => ({
+    i, m: D[sel[i]], x: i ? W - 90 : 90, y: H / 2, vx: 0, vy: 0, ar: i ? Math.PI : 0,
+    lives: 3, inv: 0, cd: { ba: 0, wi: 0, of: 0, de: 0 }, tx: 0, ty: 0, tt: 0
   }));
-  B = []; 
-  Q = []; 
-  calm = 0; 
-  margin = 0; 
-  cnt = 3; 
-  mode = 'play';
+  B = []; Q = []; calm = 0; margin = 0; cnt = 3; mode = 'play';
 }
 
 function sh(p, x, y, a, sp, r, ex) {
@@ -388,7 +326,6 @@ function act(p, k) {
   const m = p.m[k];
   p.cd[k] = foc && m.f && m.f.cd ? m.f.cd : m.cd;
   if (k === 'de') p.inv = Math.max(p.inv, m.inv);
-  
   if (net.on && p.i === net.L) {
     net.cn++;
     sendPresence({ cs: { n: net.cn, k, f: foc ? 1 : 0, x: +p.x.toFixed(1), y: +p.y.toFixed(1), a: +p.ar.toFixed(2) } });
@@ -402,7 +339,7 @@ function cast(p, k, foc) {
   const o = P[1 - p.i];
   const gp = Math.floor(Math.random() * Math.max(1, s.k - 3));
   const dir = o.x > p.x ? 0 : Math.PI;
-  
+
   for (let n = 0; n < s.k; n++) {
     if (s.pat === 'fan') sh(p, p.x, p.y, p.ar + (s.k > 1 ? (n - (s.k - 1) / 2) * s.spread / (s.k - 1) : 0), s.sp, s.r);
     if (s.pat === 'ring') sh(p, p.x, p.y, p.ar + n * 6.2832 / s.k, s.sp, s.r);
@@ -412,218 +349,143 @@ function cast(p, k, foc) {
     if (s.pat === 'curve') sh(p, p.x, p.y, p.ar + (n - (s.k - 1) / 2) * s.spread / Math.max(1, s.k - 1), s.sp, s.r, { tr: (n % 2 ? 1 : -1) * s.tr });
     if (s.pat === 'bloom') sh(p, p.x, p.y, p.ar + n * 6.2832 / s.k, s.sp, s.r, { ac: s.ac });
     if (s.pat === 'rebound') sh(p, p.x, p.y, p.ar + n * 6.2832 / s.k, s.sp, s.r, { ac: -2.5, re: s.re, rsp: s.rsp });
-    if (s.pat === 'layers') {
-      for (let l = 0; l < s.L; l++) {
-        sh(p, p.x, p.y, p.ar + n * 6.2832 / s.k + l * 0.2, s.sp + l * s.step, s.r);
-      }
-    }
+    if (s.pat === 'layers') for (let l = 0; l < s.L; l++) sh(p, p.x, p.y, p.ar + n * 6.2832 / s.k + l * 0.2, s.sp + l * s.step, s.r);
     if (s.pat === 'wall' && (n < gp || n >= gp + 3)) sh(p, p.x, (n + 0.5) * H / s.k, dir, s.sp, s.r);
-    if (s.pat === 'arms') {
-      for (let a = 0; a < s.arms; a++) {
-        Q.push({ t: n * 0.05, f: () => sh(p, p.x, p.y, p.ar + n * s.tw + a * 6.2832 / s.arms, s.sp, s.r) });
-      }
-    }
+    if (s.pat === 'arms') for (let a = 0; a < s.arms; a++) Q.push({ t: n * 0.05, f: () => sh(p, p.x, p.y, p.ar + n * s.tw + a * 6.2832 / s.arms, s.sp, s.r) });
   }
 }
 
 function ai(p, dt) {
-  if ((p.tt -= dt) <= 0) { 
-    p.tt = 0.6 + Math.random() * 0.6; 
-    p.tx = margin + 20 + Math.random() * (W - 2 * margin - 40); 
-    p.ty = 30 + Math.random() * (H - 60); 
+  if ((p.tt -= dt) <= 0) {
+    p.tt = 0.6 + Math.random() * 0.6;
+    p.tx = margin + 20 + Math.random() * (W - 2 * margin - 40);
+    p.ty = 30 + Math.random() * (H - 60);
   }
-  let vx = Math.sign(p.tx - p.x);
-  let vy = Math.sign(p.ty - p.y);
-  
-  B.forEach(b => { 
-    if (b.o !== p.i) { 
-      const dx = p.x - b.x;
-      const dy = p.y - b.y;
-      const d = Math.hypot(dx, dy); 
-      if (d < 70) { 
-        vx += (dx / d) * 3; 
-        vy += (dy / d) * 3; 
-      } 
-    } 
+  let vx = Math.sign(p.tx - p.x), vy = Math.sign(p.ty - p.y);
+  B.forEach(b => {
+    if (b.o !== p.i) {
+      const dx = p.x - b.x, dy = p.y - b.y, d = Math.hypot(dx, dy);
+      if (d < 70) { vx += dx / d * 3; vy += dy / d * 3; }
+    }
   });
-  
   const l = Math.hypot(vx, vy) || 1;
-  p.x += (vx / l) * Math.min(1, l) * p.m.speed * 0.85 * dt;
-  p.y += (vy / l) * Math.min(1, l) * p.m.speed * 0.85 * dt;
-  
+  p.x += vx / l * Math.min(1, l) * p.m.speed * 0.85 * dt;
+  p.y += vy / l * Math.min(1, l) * p.m.speed * 0.85 * dt;
   if (Math.random() < 0.5) act(p, 'ba');
   if (Math.random() < 0.02) act(p, ACT[1 + Math.floor(Math.random() * 3)]);
 }
 
 function endRound(l) {
   if (mode !== 'play') return;
-  const w = 1 - l; 
-  wins[w]++; 
-  mode = 'end';
+  const w = 1 - l;
+  wins[w]++; mode = 'end';
   msg = Math.max(...wins) >= 2 ? `${P[w].m.name} gana el duelo` : `Ronda para ${P[w].m.name}`;
-  
   if (net.on) {
     sendPresence({ ph: 'end' });
     if (Math.max(...wins) < 2) {
-      setTimeout(() => { 
-        if (mode === 'end' && net.on) start(false); 
-      }, 2500);
+      setTimeout(() => { if (mode === 'end' && net.on && net.n >= 2) start(false); }, 2500);
     }
   }
 }
 
 function remoteStep(p, dt) {
-  const r = net.rd; 
+  const r = net.rd;
   if (!r || r.x === undefined) return;
   const t = Math.min(1, dt * 14);
-  p.x += (r.x - p.x) * t; 
+  p.x += (r.x - p.x) * t;
   p.y += (r.y - p.y) * t;
 }
 
 function chk() {
-  if (mode === 'menu' && net.rdy && net.rd && net.rd.rdy && net.rd.ph !== 'end') {
-    start(true);
-  }
+  if (mode === 'menu' && net.rdy && net.rp && net.rp.rdy && net.rp.ph !== 'end') start(true);
 }
 
-// 6. Event Listeners de UI
+// 6. Interfaz
 document.getElementById('btnCreate').onclick = createRoom;
 document.getElementById('btnJoin').onclick = joinRoom;
-document.getElementById('code').onkeydown = e => { 
-  if (e.key === 'Enter') createRoom(); 
-};
-
+document.getElementById('code').onkeydown = e => { if (e.key === 'Enter') createRoom(); };
 document.getElementById('btnCopy').onclick = () => {
   const code = document.getElementById('displayCode').textContent;
   if (navigator.clipboard) {
     navigator.clipboard.writeText(code).then(() => {
       const btn = document.getElementById('btnCopy');
-      const originalText = btn.textContent;
+      const old = btn.textContent;
       btn.textContent = '¡Copiado!';
-      setTimeout(() => { btn.textContent = originalText; }, 1500);
-    }).catch(() => {
-      showStatus('⚠️ No se pudo copiar automáticamente.', 'orange');
-    });
+      setTimeout(() => { btn.textContent = old; }, 1500);
+    }).catch(() => showStatus('⚠️ No se pudo copiar automáticamente.', 'orange'));
   }
 };
 
 // 7. Bucle principal
 function update(dt) {
-  if (cnt > 0) {
-    cnt -= dt; 
-  } else {
-    calm += dt;
-  }
-  
-  if (calm > 10) {
-    margin = Math.min(W / 2 - 40, margin + 22 * dt);
-  }
-  
+  if (cnt > 0) cnt -= dt; else calm += dt;
+  if (calm > 10) margin = Math.min(W / 2 - 40, margin + 22 * dt);
+
   P.forEach(p => {
-    const ox = p.x;
-    const oy = p.y;
-    const k = ctl(p);
-    const foc = focus(p);
-    
-    for (const a in p.cd) {
-      p.cd[a] = Math.max(0, p.cd[a] - dt);
-    }
+    const ox = p.x, oy = p.y, k = ctl(p), foc = focus(p);
+    for (const a in p.cd) p.cd[a] = Math.max(0, p.cd[a] - dt);
     p.inv = Math.max(0, p.inv - dt);
-    
+
     if (net.on && p.i === net.R) {
       remoteStep(p, dt);
     } else if (cpu && p.i) {
       ai(p, dt);
     } else {
-      const dx = (keys[k.rt] ? 1 : 0) - (keys[k.lf] ? 1 : 0);
-      const dy = (keys[k.dn] ? 1 : 0) - (keys[k.up] ? 1 : 0);
+      const dx = (held(k, 'rt') ? 1 : 0) - (held(k, 'lf') ? 1 : 0);
+      const dy = (held(k, 'dn') ? 1 : 0) - (held(k, 'up') ? 1 : 0);
       const l = Math.hypot(dx, dy) || 1;
       const sp = p.m.speed * (foc ? 0.45 : 1);
-      
-      p.x += (dx / l) * sp * dt;
-      p.y += (dy / l) * sp * dt;
-      
-      if (keys[k.ba]) act(p, 'ba');
+      p.x += dx / l * sp * dt;
+      p.y += dy / l * sp * dt;
+      if (held(k, 'ba')) act(p, 'ba');
     }
-    
+
     p.x = Math.max(margin + 10, Math.min(W - margin - 10, p.x));
     p.y = Math.max(10, Math.min(H - 10, p.y));
     p.vx = (p.x - ox) / dt;
     p.vy = (p.y - oy) / dt;
   });
-  
+
   P.forEach(p => {
-    if (net.on && p.i === net.R && net.rd) { 
-      p.ar = net.rd.ar; 
-      return; 
-    }
-    const o = P[1 - p.i];
-    const foc = focus(p);
-    const lead = foc ? 0.25 : 0;
+    if (net.on && p.i === net.R && net.rd) { p.ar = net.rd.ar; return; }
+    const o = P[1 - p.i], foc = focus(p), lead = foc ? 0.25 : 0;
     const t = Math.atan2(o.y + o.vy * lead - p.y, o.x + o.vx * lead - p.x);
-    let d = t - p.ar; 
+    let d = t - p.ar;
     d = Math.atan2(Math.sin(d), Math.cos(d));
-    const m = (foc ? 14 : 2) * dt; 
+    const m = (foc ? 14 : 2) * dt;
     p.ar += Math.max(-m, Math.min(m, d));
   });
-  
+
   if (net.on && mode === 'play') {
-    net.tick = (net.tick || 0) + 1;
-    if (net.tick % 3 === 0) { 
-      const l = P[net.L]; 
-      sendPresence({ 
-        x: +l.x.toFixed(1), 
-        y: +l.y.toFixed(1), 
-        ar: +l.ar.toFixed(2), 
-        fc: focus(l) ? 1 : 0, 
-        ph: 'play', 
-        rn: net.rn 
-      }); 
+    net.tick++;
+    if (net.tick % 3 === 0) {
+      const l = P[net.L];
+      sendPresence({ x: +l.x.toFixed(1), y: +l.y.toFixed(1), ar: +l.ar.toFixed(2), fc: focus(l) ? 1 : 0, ph: 'play', rn: net.rn });
     }
   }
-  
+
   Q = Q.filter(q => (q.t -= dt) > 0 || (q.f(), false));
-  
+
   B.forEach(b => {
-    if (b.tr) { 
-      const c = Math.cos(b.tr * dt);
-      const sn = Math.sin(b.tr * dt);
-      const vx = b.vx * c - b.vy * sn; 
-      b.vy = b.vx * sn + b.vy * c; 
-      b.vx = vx; 
+    if (b.tr) {
+      const c = Math.cos(b.tr * dt), sn = Math.sin(b.tr * dt), vx = b.vx * c - b.vy * sn;
+      b.vy = b.vx * sn + b.vy * c; b.vx = vx;
     }
-    if (b.ac) { 
-      const f = 1 + b.ac * dt; 
-      b.vx *= f; 
-      b.vy *= f; 
+    if (b.ac) { const f = 1 + b.ac * dt; b.vx *= f; b.vy *= f; }
+    if (b.re !== undefined && (b.re -= dt) <= 0) {
+      const o = P[1 - b.o], a = Math.atan2(o.y - b.y, o.x - b.x);
+      b.vx = Math.cos(a) * b.rsp; b.vy = Math.sin(a) * b.rsp;
+      delete b.re; delete b.ac;
     }
-    if (b.re !== undefined && (b.re -= dt) <= 0) { 
-      const o = P[1 - b.o];
-      const a = Math.atan2(o.y - b.y, o.x - b.x); 
-      b.vx = Math.cos(a) * b.rsp; 
-      b.vy = Math.sin(a) * b.rsp; 
-      delete b.re; 
-      delete b.ac; 
-    }
-    b.x += b.vx * dt; 
-    b.y += b.vy * dt;
+    b.x += b.vx * dt; b.y += b.vy * dt;
   });
-  
   B = B.filter(b => b.x > -40 && b.x < W + 40 && b.y > -40 && b.y < H + 40);
-  
+
   for (const p of P) {
     if (p.inv > 0 || (net.on && p.i !== net.L)) continue;
     if (B.some(b => b.o !== p.i && Math.hypot(b.x - p.x, b.y - p.y) < b.r + 3)) {
-      p.lives--; 
-      p.inv = 1.5; 
-      B = []; 
-      Q = []; 
-      calm = 0; 
-      margin = 0;
-      if (net.on) { 
-        net.hn++; 
-        sendPresence({ lv: p.lives, hn: net.hn }); 
-      }
+      p.lives--; p.inv = 1.5; B = []; Q = []; calm = 0; margin = 0;
+      if (net.on) { net.hn++; sendPresence({ lv: p.lives, hn: net.hn }); }
       if (p.lives <= 0) endRound(p.i);
       break;
     }
@@ -631,133 +493,89 @@ function update(dt) {
 }
 
 function text(t, x, y, sz = 18, col = '#ece8ff', al = 'center') {
-  g.font = `${sz}px Georgia, serif`; 
-  g.fillStyle = col; 
-  g.textAlign = al; 
-  g.fillText(t, x, y);
+  g.font = `${sz}px Georgia, serif`; g.fillStyle = col; g.textAlign = al; g.fillText(t, x, y);
 }
 
 function maiden(x, y, m, foc, alpha = 1) {
   g.globalAlpha = alpha;
-  g.fillStyle = m.hair; 
-  g.beginPath(); 
-  g.arc(x, y - 4, 13, 0, 7); 
-  g.fill();
-  g.fillStyle = m.color; 
-  g.beginPath(); 
-  g.moveTo(x, y + 2); 
-  g.lineTo(x - 12, y + 18); 
-  g.lineTo(x + 12, y + 18); 
-  g.fill();
-  g.fillStyle = '#ffe9dc'; 
-  g.beginPath(); 
-  g.arc(x, y - 3, 8, 0, 7); 
-  g.fill();
-  g.fillStyle = m.color; 
-  g.beginPath(); 
-  g.moveTo(x - 14, y - 9); 
-  g.lineTo(x, y - 30); 
-  g.lineTo(x + 14, y - 9); 
-  g.fill();
+  g.fillStyle = m.hair; g.beginPath(); g.arc(x, y - 4, 13, 0, 7); g.fill();
+  g.fillStyle = m.color; g.beginPath(); g.moveTo(x, y + 2); g.lineTo(x - 12, y + 18); g.lineTo(x + 12, y + 18); g.fill();
+  g.fillStyle = '#ffe9dc'; g.beginPath(); g.arc(x, y - 3, 8, 0, 7); g.fill();
+  g.fillStyle = m.color; g.beginPath(); g.moveTo(x - 14, y - 9); g.lineTo(x, y - 30); g.lineTo(x + 14, y - 9); g.fill();
   g.globalAlpha = 1;
 }
 
 function draw() {
-  const bg = g.createLinearGradient(0, 0, 0, H); 
-  bg.addColorStop(0, '#241a52'); 
-  bg.addColorStop(1, '#0d0a26');
-  g.fillStyle = bg; 
-  g.fillRect(0, 0, W, H);
-  
-  stars.forEach(s => { 
-    s.y = (s.y + s.s / 60) % H; 
-    g.fillStyle = 'rgba(255,240,255,.6)'; 
-    g.beginPath(); 
-    g.arc(s.x, s.y, s.r, 0, 7); 
-    g.fill(); 
+  const bg = g.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#241a52'); bg.addColorStop(1, '#0d0a26');
+  g.fillStyle = bg; g.fillRect(0, 0, W, H);
+  stars.forEach(s => {
+    s.y = (s.y + s.s / 60) % H;
+    g.fillStyle = 'rgba(255,240,255,.6)'; g.beginPath(); g.arc(s.x, s.y, s.r, 0, 7); g.fill();
   });
-  
+
   if (mode === 'menu') {
     text('Maiden & Spell', W / 2, 80, 46, '#ffd1f0');
     text('Duelo de hechizos: esquiva, apunta y no recibas ningún golpe', W / 2, 112, 16, '#a49fcf');
     [0, 1].forEach(i => {
-      const m = D[sel[i]];
-      const x = W * (0.25 + 0.5 * i);
-      maiden(x, 220, m); 
+      const m = D[sel[i]], x = W * (0.25 + 0.5 * i);
+      maiden(x, 220, m);
       text(m.name, x, 275, 24, m.color);
       text(i && cpu ? 'CPU' : `Jugador ${i + 1}`, x, 160, 18);
       const st = i && cpu || ready[i];
-      text(st ? 'Lista' : (net.on ? (i === net.L ? 'A/D elegir, F confirmar' : 'Esperando...') : i ? '←/→ elegir, coma confirmar' : 'A/D elegir, F confirmar'), x, 400, 14, st ? '#7ddf7a' : '#ece8ff');
+      const hint = net.on ? (i === net.L ? 'A/D o ←/→ elegir, Enter confirma' : 'Esperando...')
+        : solo() ? 'A/D o ←/→ elegir, Enter confirma'
+        : i ? '←/→ elegir, coma confirmar' : 'A/D elegir, F confirmar';
+      text(st ? 'Lista' : hint, x, 400, 14, st ? '#7ddf7a' : '#ece8ff');
     });
-    text(net.on ? `Sala '${net.code}': ${ws && ws.readyState === 1 && net.rd ? 'rival conectado' : 'esperando rival'}` : `V: jugar contra la CPU (${cpu ? 'activado' : 'desactivado'})`, W / 2, 450, 14, '#a49fcf');
+    text(net.on ? `Sala '${net.code}': ${net.n >= 2 ? 'rival conectado' : 'esperando rival'}` : `V: jugar contra la CPU (${cpu ? 'activado' : 'desactivado'})`, W / 2, 450, 14, '#a49fcf');
     return;
   }
-  
-  g.fillStyle = 'rgba(160,50,110,.55)'; 
-  g.fillRect(0, 0, margin, H); 
-  g.fillRect(W - margin, 0, margin, H);
-  
+
+  g.fillStyle = 'rgba(160,50,110,.55)';
+  g.fillRect(0, 0, margin, H); g.fillRect(W - margin, 0, margin, H);
+
   B.forEach(b => {
-    g.shadowColor = b.c; 
-    g.shadowBlur = 12; 
-    g.fillStyle = b.c; 
-    g.beginPath(); 
-    g.arc(b.x, b.y, b.r + 1.5, 0, 7); 
-    g.fill();
-    g.shadowBlur = 0; 
-    g.fillStyle = '#fff'; 
-    g.beginPath(); 
-    g.arc(b.x, b.y, b.r * 0.6, 0, 7); 
-    g.fill();
+    g.shadowColor = b.c; g.shadowBlur = 12; g.fillStyle = b.c;
+    g.beginPath(); g.arc(b.x, b.y, b.r + 1.5, 0, 7); g.fill();
+    g.shadowBlur = 0; g.fillStyle = '#fff';
+    g.beginPath(); g.arc(b.x, b.y, b.r * 0.6, 0, 7); g.fill();
   });
-  
+
+  const mine = net.on ? net.L : 0;
   P.forEach(p => {
-    const foc = focus(p);
-    const blink = p.inv > 0 && Math.floor(p.inv * 12) % 2;
-    g.strokeStyle = p.m.color; 
-    g.globalAlpha = foc ? 0.9 : 0.4; 
-    g.lineWidth = 2;
-    g.beginPath(); 
-    g.moveTo(p.x + Math.cos(p.ar) * 20, p.y + Math.sin(p.ar) * 20); 
-    g.lineTo(p.x + Math.cos(p.ar) * 46, p.y + Math.sin(p.ar) * 46); 
+    const foc = focus(p), blink = p.inv > 0 && Math.floor(p.inv * 12) % 2;
+    g.strokeStyle = p.m.color; g.globalAlpha = foc ? 0.9 : 0.4; g.lineWidth = 2;
+    g.beginPath();
+    g.moveTo(p.x + Math.cos(p.ar) * 20, p.y + Math.sin(p.ar) * 20);
+    g.lineTo(p.x + Math.cos(p.ar) * 46, p.y + Math.sin(p.ar) * 46);
     g.stroke();
     g.globalAlpha = 1;
     maiden(p.x, p.y, p.m, foc, blink ? 0.35 : 1);
-    g.fillStyle = '#fff'; 
-    g.shadowColor = '#fff'; 
-    g.shadowBlur = foc ? 8 : 0; 
-    g.beginPath(); 
-    g.arc(p.x, p.y, 3, 0, 7); 
-    g.fill(); 
-    g.shadowBlur = 0;
-    if (foc) { 
-      g.strokeStyle = '#fff'; 
-      g.lineWidth = 1; 
-      g.beginPath(); 
-      g.arc(p.x, p.y, 7, 0, 7); 
-      g.stroke(); 
-    }
-    const x = p.i ? W - 12 : 12;
-    const al = p.i ? 'right' : 'left';
+    g.fillStyle = '#fff'; g.shadowColor = '#fff'; g.shadowBlur = foc ? 8 : 0;
+    g.beginPath(); g.arc(p.x, p.y, 3, 0, 7); g.fill(); g.shadowBlur = 0;
+    if (foc) { g.strokeStyle = '#fff'; g.lineWidth = 1; g.beginPath(); g.arc(p.x, p.y, 7, 0, 7); g.stroke(); }
+    const x = p.i ? W - 12 : 12, al = p.i ? 'right' : 'left';
     text(`${p.m.name}  ${'♥'.repeat(Math.max(0, p.lives))}  ${'★'.repeat(wins[p.i])}`, x, 22, 17, p.m.color, al);
     ['wi', 'of', 'de'].forEach((a, j) => {
-      const w = 60;
-      const bx = p.i ? W - 12 - w : 12;
-      const by = 32 + j * 9;
-      const f = 1 - p.cd[a] / p.m[a].cd;
-      g.fillStyle = 'rgba(255,255,255,.15)'; 
-      g.fillRect(bx, by, w, 5);
-      g.fillStyle = f >= 1 ? p.m.color : '#6a649c'; 
-      g.fillRect(bx, by, w * f, 5);
+      const w = 60, bx = p.i ? W - 12 - w : 12, by = 32 + j * 9, f = 1 - p.cd[a] / p.m[a].cd;
+      g.fillStyle = 'rgba(255,255,255,.15)'; g.fillRect(bx, by, w, 5);
+      g.fillStyle = f >= 1 ? p.m.color : '#6a649c'; g.fillRect(bx, by, w * f, 5);
+      const lb = solo() ? (p.i === mine ? LBL.solo[j] : '') : LBL.local[p.i][j];
+      if (lb) text(lb, p.i ? bx - 6 : bx + w + 6, by + 6, 10, '#a49fcf', p.i ? 'right' : 'left');
     });
   });
-  
+
+  text(solo()
+    ? 'Mover: WASD o flechas · Shift: Focus · J/Z: disparo (mantén) · K/X: amplio · L/C: ofensivo · Espacio: defensivo'
+    : 'J1: WASD, Shift, F G H T   ·   J2: flechas, Shift der., coma punto barra punto y coma',
+    W / 2, H - 8, 11, 'rgba(164,159,207,.85)');
+
   if (cnt > 0) text(String(Math.ceil(cnt)), W / 2, H / 2, 64, '#ffd1f0');
   if (calm > 10) text('Las paredes se cierran', W / 2, 24, 15, '#f06f9b');
-  
+
   if (mode === 'end') {
-    g.fillStyle = 'rgba(11,9,32,.75)'; 
-    g.fillRect(0, 0, W, H);
+    g.fillStyle = 'rgba(11,9,32,.75)'; g.fillRect(0, 0, W, H);
     text(msg, W / 2, H / 2, 32, '#ffd1f0');
     text(Math.max(...wins) >= 2 ? 'Enter para volver al menú' : 'Enter para la siguiente ronda', W / 2, H / 2 + 34, 16, '#a49fcf');
   }
@@ -765,10 +583,10 @@ function draw() {
 
 let last = performance.now();
 (function loop(t) {
-  const dt = Math.min(0.05, (t - last) / 1000); 
+  const dt = Math.min(0.05, (t - last) / 1000);
   last = t;
   if (mode === 'play') update(dt);
-  draw(); 
+  draw();
   requestAnimationFrame(loop);
 })(last);
 </script>
